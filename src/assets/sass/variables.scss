@@ -1,0 +1,5 @@
+$original-color: #000;
+$primary-color: adjust-color($original-color, $red: 0);
+$error-color: adjust-color($primary-color, $red: 255);
+$blink-dark: darken($primary-color, 50);
+$blink-light: lighten($primary-color, 50);

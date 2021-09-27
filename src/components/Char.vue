@@ -12,26 +12,44 @@ export default {
     }
 }
 </script>
+<style lang='scss'>
 
-<style>
+    // @keyframes blink-cursor {
+    //     0% {background-color: $blink-dark; color: $blink-light;}
+    //     49% {background-color: $blink-dark; color: $blink-light;}
+    //     50% {background-color: $blink-light; color: $blink-dark;}
+    // }
     @keyframes blink-cursor {
-        0% { background-color: black; color: white;}
-        49% { background-color: black; color: white;}
-        50% { background-color: white; color: black;}
+        0% {filter: invert(1)}
+        49% {filter: invert(1)}
+        50% {filter: invert(0)}
     }
-    .active > .char {
+    .char {
+        font-size: 36px;
+        color: $primary-color;
+        // color: #000;
+    }
+    .space .char {
+        opacity: 0.3;
+    }
+    .error .char {
+        color: $error-color;
+        opacity: 1;
+    }
+    .complete {
+        opacity: 0.3;
+    }
+    .error {
+        opacity: 1;
+    }
+    .active .char {
+        background-color: invert($primary-color);
         animation-name: blink-cursor;
         animation-duration: 1s;
         animation-iteration-count: infinite;
     }
-    .char {
-        font-size: 36px;
-    }
-    .error {
-        color: red;
-    }
-    .complete {
-        opacity: 0.5
+    .active.error .char {
+        background-color: invert($error-color);
     }
 
 </style>

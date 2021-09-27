@@ -1,15 +1,22 @@
 <template>
-  <div class="container">
-    <Char
-      :class="{ 
-        'active': cursorPos == index,
-        'error': errors[index] != null,
-        'complete': index < cursorPos
-      }"
-      v-for="(char, index) in wordset"
-      :key="index"
-      :char="char"
-      :errorKey="errors[index]" />
+  <div class="container pt-5">
+    <Stats :avrgTimes="avrgTimes" :spaceChar="spaceChar" :level="level"/>
+
+    <div v-if="!loadingWords">
+      <Char
+        :class="{ 
+          'active': cursorPos == index,
+          'error': errors[index] != null,
+          'complete': index < cursorPos,
+          'space': char == spaceChar
+        }"
+        v-for="(char, index) in wordset"
+        :key="index"
+        :char="char"
+        :errorKey="errors[index]" />
+    </div>
+
+    <div v-else> Loading... </div>
   </div>
 </template>
 
@@ -18,18 +25,27 @@ var Filter = require('bad-words'),
     filter = new Filter({ placeHolder: ' '});
 
 import Char from './components/Char.vue'
+import Stats from './components/Stats.vue'
 
 export default {
   name: 'App',
-  components: { Char },
+  components: { Char, Stats },
   data() {
     return {
+      spaceChar: '␣',
       cursorPos: 0,
       errors: [],
       subDictionary: [],
       level: 6,
       letterProgression: 'enitrlsauodychgmpbkvwfzxqj',
-      currentWords: []
+      currentWords: [],
+      stats: {},
+      lastLetterTime: 0,
+      avrgTimes: {},
+      targetTime: 300,
+      averageRange: 100,
+      initialSpace: true,
+      loadingWords: false
     }
   },
   computed: {
@@ -37,13 +53,27 @@ export default {
       return this.letterProgression.substr(0, this.level);
     },
     weakestLetters() {
-      return [];
+      let weakLetters = this.filterObject(this.avrgTimes, time => time > this.targetTime);
+      let sortedWeakLetters = Object.fromEntries(
+        Object.entries(weakLetters).sort(([,a], [,b]) => a - b)
+      );
+      let weakestDuo = Object.keys(sortedWeakLetters).slice(0, 2);
+      return weakestDuo;
     },
     wordset() {
-      return this.currentWords.join('␣');
+      return this.currentWords.join(this.spaceChar);
     }
   },
-  mounted() {
+  created() {
+    this.loadingWords = true;
+
+    // initialize stats
+    for (const letter of this.letterProgression) {
+      this.stats[letter] = [];
+      this.avrgTimes[letter] = 0;
+    }
+    // this.avrgTimes = {...this.stats};
+
     // update subDictionary
     this.subDictionary = this.updateSubDictionary();
     this.getNewWordSet();
@@ -51,30 +81,114 @@ export default {
     // key listener
     window.addEventListener('keyup', this.keyHandler);
 
-    // check clean
-    // this.checkClean()
-
+    this.loadingWords = false;
   },
   methods: {
+    filterObject(obj, predicate) {
+      return Object.keys(obj)
+            .filter( key => predicate(obj[key]) )
+            .reduce( (res, key) => (res[key] = obj[key], res), {} );
+    },
     keyHandler(event) {
+      let now = Date.now();
+      let hit = null;
+      let timeToType = null;
+
+      let currentLetter = this.wordset[this.cursorPos];
       // correct key press
       if(this.wordset[this.cursorPos] == event.key
-      || (this.wordset[this.cursorPos] == '␣' && event.key == ' ')) {
+      || (this.wordset[this.cursorPos] == '␣' && event.key == ' ')
+      || (this.cursorPos == 0 && event.key == ' ' && this.initialSpace)) {
+
+        if(this.cursorPos == 0 && event.key == ' ') {
+          this.initialSpace = false;
+          return;
+        }
+        
+        hit = true;
+        // avoid getting a huge number on last letter time for the initial test time
+        this.lastLetterTime ? '' : this.lastLetterTime = now;
+        timeToType = now - this.lastLetterTime;
+        // update lastLetterTime
+        this.lastLetterTime = now;
+
+        // Move to next letter
         this.cursorPos++;
       } 
       // incorrect keypress
       else {
+        hit = false
         this.errors[this.cursorPos] = event.key;
       }
+
+      /*
+       * Collect Data
+       */
+      // initialize if don't have data for this letter
+      this.stats[currentLetter] ? '' : this.stats[currentLetter] = [];
+
+      // push data about key to its index
+      this.stats[currentLetter].unshift({
+        "timestamp": now,
+        "timeToType": timeToType,
+        "hit": hit
+      });
+      // cut the array short according to average range 
+      this.stats[currentLetter] = this.stats[currentLetter].slice(0, this.averageRange);
+
+      // Calculate avrgTimes for all correct keypresses
+      for (const key in this.stats) {
+        if (Object.hasOwnProperty.call(this.stats, key)) {
+          if(key != this.spaceChar) {
+            const letterStats = this.stats[key];
+            if(letterStats.length) {
+              let total = 0;
+              let errors = 0;
+              this.avrgTimes[key] = letterStats.reduce((hitOnly, stats) => {
+                total++;
+                if(stats.hit) {
+                  hitOnly += stats.timeToType;
+                } else errors++;
+
+                if(letterStats.length == total) {
+                  hitOnly = Math.floor(hitOnly / (total - errors));
+                }
+                return hitOnly;
+              }, 0);
+            }
+          }
+        }
+      }
+
       if(this.cursorPos == this.wordset.length) {
+        this.loadingWords = true;
+
+        const isBelowThreshhold = this.isBelowThreshhold(this.targetTime);
+        if(isBelowThreshhold) {
+          this.level++;
+          this.subDictionary = this.updateSubDictionary();
+        }
         this.getNewWordSet();
         this.cursorPos = 0;
         this.errors = [];
+        this.lastLetterTime = 0;
+        this.initialSpace = true;
+
+        this.loadingWords = false;
       }
+    },
+    isBelowThreshhold(threshhold) {
+      for (const avrg of Object.values(this.avrgTimes)) {
+        console.log(avrg);
+        if(avrg > threshhold) {
+          return false;
+        }
+      }
+      return true;
     },
     getNewWordSet() { 
       this.currentWords = [];
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 5; i++) {
         this.currentWords.push(this.getWordWithLetters());
       }
     },
@@ -163,17 +277,16 @@ export default {
   },
 }
 
-filter.addWords('tittie', 'tittier');
+// filter.addWords('bad');
 </script>
 
-<style>
+<style lang="scss">
 #app {
+  // background-color: lighten($primary-color, 50);
   font-family: 'Inconsolata', monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
   text-align: left;
 }
 </style>
