@@ -25,9 +25,6 @@ export default {
         level: Number
     },
     components: {Stat},
-    created() {
-        console.log(this.avrgTimes);
-    }
 }
 </script>
 

@@ -27,6 +27,10 @@ var Filter = require('bad-words'),
 import Char from './components/Char.vue'
 import Stats from './components/Stats.vue'
 
+const bgWordGenerator = new Worker(
+  "js/background-word-generator-worker.js"
+);
+
 export default {
   name: 'App',
   components: { Char, Stats },
@@ -46,42 +50,43 @@ export default {
       averageRange: 30,
       initialSpace: true,
       loadingWords: false,
-      wordsPerSet: 5,
+      error: null,
+      wordsPerSet: 15,
       dictionaryIndex: 0,
     }
   },
   computed: {
     currentLetters() {
-      console.time('currentLetters');
       let currentLetters = this.letterProgression.substr(0, this.level);
-      console.timeEnd('currentLetters');
       return currentLetters;
     },
     weakestLetters() {
-      console.time('weakestLetters');
       let weakLetters = this.filterObject(this.avrgTimes, time => time > this.targetTime);
       let sortedWeakLetters = Object.fromEntries(
         Object.entries(weakLetters).sort(([,a], [,b]) => b - a)
       );
       let weakestDuo = Object.keys(sortedWeakLetters).slice(0, 2);
-      console.timeEnd('weakestLetters');
       return weakestDuo;
     },
     wordset() {
-      console.time('wordset');
       let wordset = this.currentWords.join(this.spaceChar);
-      console.timeEnd('wordset');
       return wordset;
     }
   },
   created() {
-    console.time('created');
-    this.loadingWords = true;
+
+    // callback for events from worker
+    bgWordGenerator.onmessage = (event) => {
+      if (Array.isArray(event.data.key)) {
+        event.data.key.forEach((key, i) => {
+          this[key] = event.data.value[i]
+        })
+      }
+      this[event.data.key] = event.data.value;
+    };
 
     // smalldictionary
-    console.log(dictionary.length);
     dictionary = dictionary.filter(word => word.length < 9);
-    console.log(dictionary.length);
 
     // initialize stats
     for (const letter of this.letterProgression) {
@@ -98,20 +103,16 @@ export default {
     window.addEventListener('keyup', this.keyHandler);
 
     this.loadingWords = false;
-    console.timeEnd('created');
   },
   methods: {
     filterObject(obj, predicate) {
-      console.time('filterObject');
       
       let filteredObject = Object.keys(obj)
             .filter( key => predicate(obj[key]) )
             .reduce( (res, key) => (res[key] = obj[key], res), {} );
-      console.timeEnd('filterObject');
       return filteredObject;
     },
     keyHandler(event) {
-      console.time('keyHandler');
       let now = Date.now();
       let hit = null;
       let timeToType = null;
@@ -189,47 +190,40 @@ export default {
         // const isBelowThreshhold = this.isBelowThreshhold(this.targetTime);
         // if(isBelowThreshhold) {
         //   this.level++;
-        //   console.log('updateSubDictionary');
         //   this.subDictionary = this.updateSubDictionary();
         // }
 
         // clear wordset
-        this.currentWords = '';
         this.cursorPos = 0;
         this.errors = [];
         this.lastLetterTime = 0;
         this.initialSpace = true;
         
-        console.log('getNewWordSet');
         Promise.resolve().then(v => this.getNewWordSet());
 
         this.loadingWords = false;
       }
-      console.timeEnd('keyHandler');
     },
     isBelowThreshhold(threshhold) {
-      console.time('isBelowThreshhold');
       for (const avrg of Object.values(this.avrgTimes)) {
-        console.log(avrg);
         if(avrg > threshhold) {
           return false;
         }
       }
-      console.timeEnd('isBelowThreshhold');
       return true;
     },
     getNewWordSet() {
-      console.time('getNewWordSet');
-      Promise.resolve().then(v => {
-        this.currentWords = [];
-        for (let i = 0; i < this.wordsPerSet; i++) {
-          this.currentWords.push(this.getWordWithLetters());
-        }
+      this.currentWords = [];
+      this.error ? this.error = null : '';
+      let weakestLetters = this.weakestLetters;
+      let currentLetters = this.currentLetters;
+      let subDictionary = Object.values(this.subDictionary);
+      bgWordGenerator.postMessage({
+        method: "getNewWordSets",
+        args: [this.wordsPerSet, weakestLetters, currentLetters, subDictionary, this.dictionaryIndex],
       });
-      console.timeEnd('getNewWordSet');
     },
     updateSubDictionary(){
-      console.time('updateSubDictionary');
       let letters = this.currentLetters;
       // get a subset from dictionary
       // only words made from 'letters'
@@ -249,14 +243,11 @@ export default {
       })
       
       this.shuffleArray(subDictionary);
-      console.timeEnd('updateSubDictionary');
       return subDictionary;
     },
     getWordWithLetters(){
-      console.time('getWordWithLetters');
       let letters = this.weakestLetters;
       for(const letter of letters) {
-        console.log(letter)
         if(!this.currentLetters.includes(letter)) {
           letters = [];
           break;
@@ -273,11 +264,9 @@ export default {
           };
         }
       }
-      console.timeEnd('getWordWithLetters');
       return word;
     },
     getWord() {
-      console.time('getWord');
       // // determine a random word length
       // let wordLength = Math.floor(Math.random() * (this.max - (this.min - 1))) + this.min;
 
@@ -286,11 +275,9 @@ export default {
       
       let word = filter.clean(this.subDictionary[this.dictionaryIndex]);
       while(!word.trim()) {
-        console.log(this.subDictionary[this.dictionaryIndex].split('').reverse().join(''));
         this.nextDictionaryIndex();
         word = filter.clean(this.subDictionary[this.dictionaryIndex]);
       }
-      console.timeEnd('getWord');
       this.nextDictionaryIndex();
       return word;
     },
@@ -298,32 +285,25 @@ export default {
         this.dictionaryIndex == this.subDictionary.length ? this.dictionaryIndex = 0 : this.dictionaryIndex++;
     },
     checkClean() {
-      console.time('checkClean');
       let clean = dictionary;
       let index = 0;
       for (const word of dictionary) {
         let cleanWord = filter.clean(word);
-        // console.log(word.split('').reverse().join(''));
         if(!cleanWord.trim()) {
           clean.splice(index, 1);
-          console.log(index, word);
         }
         index++;
       }
-      console.log(clean);
-      console.timeEnd('checkClean');
     },
     // getWordWithLength(length) {
     //   this.shuffleArray(this.subDictionary);
     //   return this.subDictionary.find(word => word.length == length);
     // },
     shuffleArray(array) {
-      console.time('shuffleArray');
       for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [array[i], array[j]] = [array[j], array[i]];
       }
-      console.timeEnd('shuffleArray');
     }
   },
 }
