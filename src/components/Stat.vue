@@ -1,6 +1,6 @@
 <template>
     <div
-      :style="[time ? {backgroundColor: `rgb(${time - 266}, ${(266+255)-time}, 0)`} : {backgroundColor: '#eee'}]">
+      :style="[time ? {backgroundColor: `rgb(${time - targetTime}, ${(targetTime+255)-time}, 0)`} : {backgroundColor: '#eee'}]">
         {{ letter }}
         <span>{{ time }}</span>
     </div>
@@ -9,6 +9,7 @@
 <script>
 export default {
     props: {
+        targetTime: Number,
         time: Number,
         letter: String,
     }

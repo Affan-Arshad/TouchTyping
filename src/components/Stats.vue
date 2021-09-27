@@ -9,7 +9,8 @@
           v-show="key != spaceChar"
           :key="key"
           :time="time"
-          :letter="key" />
+          :letter="key"
+          :targetTime="targetTime" />
     </div>
 </template>
 
@@ -18,6 +19,7 @@ import Stat from './Stat.vue'
 export default {
     name: 'Stats',
     props: {
+        targetTime: Number,
         avrgTimes: Object,
         spaceChar: String,
         level: Number
