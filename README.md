@@ -1,4 +1,4 @@
-# random-words
+# Touch Typing
 
 ## Project setup
 ```
