@@ -40,13 +40,13 @@ export default {
       cursorPos: 0,
       errors: [],
       subDictionary: [],
-      level: 26,
+      level: 6,
       letterProgression: 'enitrlsauodychgmpbkvwfzxqj',
       currentWords: [],
       stats: {},
       lastLetterTime: 0,
       avrgTimes: {},
-      targetTime: 300,
+      targetTime: 450,
       averageRange: 30,
       initialSpace: true,
       loadingWords: false,
@@ -65,8 +65,9 @@ export default {
       let sortedWeakLetters = Object.fromEntries(
         Object.entries(weakLetters).sort(([,a], [,b]) => b - a)
       );
-      let weakestDuo = Object.keys(sortedWeakLetters).slice(0, 2);
-      return weakestDuo;
+      let weakestLettersCount = 5;
+      let weakestSet = Object.keys(sortedWeakLetters).slice(0, weakestLettersCount);
+      return weakestSet;
     },
     wordset() {
       let wordset = this.currentWords.join(this.spaceChar);
@@ -96,13 +97,20 @@ export default {
     // this.avrgTimes = {...this.stats};
 
     // update subDictionary
-    this.subDictionary = this.updateSubDictionary();
-    this.getNewWordSet();
+    // this.subDictionary = this.updateSubDictionary();
+
+    // this.getNewWordSet();
+    this.loadingWords = true;
+    this.currentWords = [];
+    this.error ? this.error = null : '';
+    bgWordGenerator.postMessage({
+      method: "getNewWordSets",
+      args: [this.wordsPerSet, this.weakestLetters, this.currentLetters, Object.values(this.subDictionary), this.dictionaryIndex, true],
+    });
 
     // key listener
     window.addEventListener('keyup', this.keyHandler);
 
-    this.loadingWords = false;
   },
   methods: {
     filterObject(obj, predicate) {
@@ -113,96 +121,133 @@ export default {
       return filteredObject;
     },
     keyHandler(event) {
-      let now = Date.now();
-      let hit = null;
-      let timeToType = null;
-
-      let currentLetter = this.wordset[this.cursorPos];
-      // correct key press
-      if(this.wordset[this.cursorPos] == event.key
-      || (this.wordset[this.cursorPos] == '␣' && event.key == ' ')
-      || (this.cursorPos == 0 && event.key == ' ' && this.initialSpace)) {
+      if(this.cursorPos < this.wordset.length-1 && !this.loadingWords) {
+        let char = event.key;
+        this.errors[this.cursorPos] = null;
         
-        if(this.cursorPos == 0 && event.key == ' ') {
-          this.initialSpace = false;
+        // ignore backspace
+        if(char == "Backspace") {
+          this.cursorPos--;
           return;
         }
-        
-        hit = true;
-        // avoid getting a huge number on last letter time for the initial test time
-        this.lastLetterTime ? '' : this.lastLetterTime = now;
-        timeToType = now - this.lastLetterTime;
-        // update lastLetterTime
-        this.lastLetterTime = now;
 
-        // Move to next letter
-        this.cursorPos++;
-      } 
-      // incorrect keypress
-      else {
-        hit = false
-        this.errors[this.cursorPos] = event.key;
-      }
+        // change space to space char
+        if(char == " ") char = this.spaceChar
 
-      /*
-       * Collect Data
-       */
-      // initialize if don't have data for this letter
-      this.stats[currentLetter] ? '' : this.stats[currentLetter] = [];
+        let now = Date.now();
+        let hit = null;
+        let timeToType = null;
 
-      // push data about key to its index
-      this.stats[currentLetter].unshift({
-        "timestamp": now,
-        "timeToType": timeToType,
-        "hit": hit
-      });
-      // cut the array short according to average range 
-      this.stats[currentLetter] = this.stats[currentLetter].slice(0, this.averageRange);
+        let currentLetter = this.wordset[this.cursorPos];
+        // correct key press
+        if(this.wordset[this.cursorPos] == char
+        // || (this.wordset[this.cursorPos] == '␣' && char == ' ') // Chnaged space to space char above.. so no more need
+        || (this.cursorPos == 0 && char == this.spaceChar && this.initialSpace)) {
+          
+          if(this.cursorPos == 0 && char == this.spaceChar) {
+            this.initialSpace = false;
+            return;
+          }
+          
+          hit = true;
 
-      // Calculate avrgTimes for all correct keypresses
-      for (const key in this.stats) {
-        if (Object.hasOwnProperty.call(this.stats, key)) {
-          if(key != this.spaceChar) {
-            const letterStats = this.stats[key];
-            if(letterStats.length) {
-              let total = 0;
-              let errors = 0;
-              this.avrgTimes[key] = letterStats.reduce((hitOnly, stats) => {
-                total++;
-                if(stats.hit) {
-                  hitOnly += stats.timeToType;
-                } else errors++;
+          // time to type
+          timeToType = this.getTimeToType(now);
 
-                if(letterStats.length == total) {
-                  hitOnly = Math.floor(hitOnly / (total - errors));
-                }
-                return hitOnly;
-              }, 0);
-            }
+          // Move to next letter
+          this.cursorPos++;
+        } 
+        // incorrect keypress
+        else {
+          hit = false
+          this.errors[this.cursorPos] = char;
+
+          // time to type
+          timeToType = this.getTimeToType(now) +400;
+          console.log(timeToType);
+          
+          // Move to next letter
+          this.cursorPos++;
+        }
+
+        /*
+        * Collect Data
+        */
+        // initialize if don't have data for this letter
+        this.stats[currentLetter] ? '' : this.stats[currentLetter] = [];
+
+        // push data about key to its index
+        this.stats[currentLetter].unshift({
+          "timestamp": now,
+          "timeToType": timeToType,
+          "hit": hit
+        });
+        // cut the array short according to average range 
+        this.stats[currentLetter] = this.stats[currentLetter].slice(0, this.averageRange);
+
+        // Calculate avrgTimes for all correct keypresses
+        for (const key in this.stats) {
+          if (Object.hasOwnProperty.call(this.stats, key)) {
+            // if(key != this.spaceChar) {
+              const letterStats = this.stats[key];
+              if(letterStats.length) {
+                let total = 0;
+                // let errors = 0;
+                this.avrgTimes[key] = letterStats.reduce((hitOnly, stats) => {
+                  total++;
+                  // if(stats.hit) {
+                    hitOnly += stats.timeToType;
+                  // } else errors++;
+
+                  if(letterStats.length == total) {
+                    // hitOnly = Math.floor(hitOnly / (total - errors));
+                    hitOnly = Math.floor(hitOnly / total);
+                  }
+                  return hitOnly;
+                }, 0);
+              }
+            // }
           }
         }
       }
+      else if (!this.loadingWords) {
+        if(this.cursorPos == this.wordset.length-1) {
 
-      if(this.cursorPos == this.wordset.length) {
-        this.loadingWords = true;
+          let updateSubDictionary = false;
+          // Unlock Next Letter
+          const isBelowThreshhold = this.isBelowThreshhold(this.targetTime);
+          if(isBelowThreshhold) {
+            this.level++;
+            // this.subDictionary = this.updateSubDictionary();
+            updateSubDictionary = true;
+          }
 
-        // Unlock Next Letter
-        // const isBelowThreshhold = this.isBelowThreshhold(this.targetTime);
-        // if(isBelowThreshhold) {
-        //   this.level++;
-        //   this.subDictionary = this.updateSubDictionary();
-        // }
+          // clear wordset
+          this.cursorPos = 0;
+          this.errors = [];
+          this.lastLetterTime = 0;
+          this.initialSpace = true;
+          
+          // this.getNewWordSet();
+          this.loadingWords = true;
+          this.currentWords = [];
+          this.error ? this.error = null : '';
 
-        // clear wordset
-        this.cursorPos = 0;
-        this.errors = [];
-        this.lastLetterTime = 0;
-        this.initialSpace = true;
-        
-        Promise.resolve().then(v => this.getNewWordSet());
-
-        this.loadingWords = false;
+          bgWordGenerator.postMessage({
+            method: "getNewWordSets",
+            args: [this.wordsPerSet, this.weakestLetters, this.currentLetters, Object.values(this.subDictionary), this.dictionaryIndex, updateSubDictionary],
+          });
+        }
       }
+    },
+    getTimeToType(now) {
+      // avoid getting a huge number on last letter time for the initial test time
+      this.lastLetterTime ? '' : this.lastLetterTime = now;
+      let timeToType = now - this.lastLetterTime;
+      // update lastLetterTime
+      this.lastLetterTime = now;
+
+      return timeToType;
     },
     isBelowThreshhold(threshhold) {
       for (const avrg of Object.values(this.avrgTimes)) {
@@ -319,5 +364,8 @@ export default {
   -moz-osx-font-smoothing: grayscale;
   text-align: center;
   text-align: left;
+}
+.container {
+  white-space: nowrap;
 }
 </style>

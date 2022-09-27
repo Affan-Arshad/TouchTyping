@@ -1,6 +1,6 @@
 <template>
     <span>
-        <span class="char">{{ char }}</span>
+        <span class="char" :errorkey="errorKey">{{ char }}</span>
         <wbr v-if="char == '␣'">
     </span>
 </template>
@@ -9,6 +9,7 @@
 export default {
     props: {
         char: String,
+        errorKey: String,
     }
 }
 </script>
@@ -35,6 +36,7 @@ export default {
     .error .char {
         color: $error-color;
         opacity: 1;
+        position: relative;
     }
     .complete {
         opacity: 0.3;
@@ -50,6 +52,15 @@ export default {
     }
     .active.error .char {
         background-color: invert($error-color);
+    }
+    .error .char:after {
+        content: attr(errorkey);
+        position: absolute;
+        font-size: 13px;
+        z-index: 1;
+        top: -17px;
+        left: 50%;
+        transform: translateX(-50%);
     }
 
 </style>
